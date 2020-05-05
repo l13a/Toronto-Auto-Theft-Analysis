@@ -1,0 +1,355 @@
+---
+title: "Combating Auto Thefts"
+author: "Shiyuan Zhou, Xinpeng Shan, Xinyi Chen, Tala ELkukhun, TUT0206, Group3"
+subtitle: Investigating attritubes of areas prone to auto thefts
+output:
+  ioslides_presentation: default
+  beamer_presentation: default
+  widescreen: yes
+---
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# echo=FALSE will stop the code chunk from appearing in the knit document
+# warning=FALSE and message=FALSE will stop R messages from appearing in the knit document
+library(tidyverse)
+auto_thefts <- read_csv("auto_thefts.csv")
+neighbourhood_profiles_2016 <- read_csv("neighbourhood_profiles_2016.csv")
+crime_rates <- read_csv("Neighbourhood_Crime_Rates_Boundary_File_final1.csv")
+month_conclusion <- read_csv("month_conclusionfinal1.CSV")
+```
+
+## Introduction
+
+- Given two data sets on auto thefts in numerous neighbourhoods in Toronto for over 11,000 vehicles between 2014 and 2018 
+
+- Thefts of vehicles are a major concern 
+
+- Hoping to analyze the public data critically and identify both trends and anomalies
+
+- Suggest functional ways on how to prevent auto theft
+
+
+## Objectives 
+
+- Is there a significant difference between the number of auto theft occurrences for each month
+ from 2014-2018?
+- What characteristics do the top 20 neighbourhoods with the highest number of auto theft occurrences have in common?
+
+## Data Summary (Data Wrangling)
+
+- Joined the auto_thefts dataset, the neighbourhood_profiles_2016 dataset, and the table we created with the number of occurrences in each neighbourhood
+
+- Imported another public dataset from TPS that has information about the number of cases for all crime types in neighbourhoods
+
+- Joined the imported dataset with our existing joint data set
+
+---
+
+### **We created three new variables: **
+- number of auto theft occurrences per neighbourhood
+
+- occurrence category for the number of occurrences (ex. high) 
+
+- total number of other theft cases over 5 years
+
+```{r, echo=FALSE}
+#creating data set that calculates the total number of auto thefts
+count_HOODID_differences<-auto_thefts %>%
+  group_by(Hood_ID) %>%
+  summarise(num_occurrences=n()) %>% arrange (desc(num_occurrences))
+
+#create a joint file that has all info from both data sets, including total number of auto thefts
+both_data<-inner_join(x=auto_thefts, y=neighbourhood_profiles_2016, by="Hood_ID")
+all_data<-inner_join(x=both_data, y=count_HOODID_differences, by="Hood_ID")
+
+#create a variable that categorizes the neighbourhoods between top 20 most prone to auto thefts, and the rest
+#the number 211 is from the data set count_HOODID_differences, it is the num of auto thefts for the 20th neighbourhood in ranking
+all_data <- all_data %>%
+  mutate(occurrence_cat = ifelse(num_occurrences >= 211, 'Top 20 Neighbourhoods with the Most Number of Auto Thefts', 'Other Neighbourhoods'))
+```
+
+## What characteristics do the top 20 theft prone neighbourhoods have?
+```{r, echo=FALSE, fig.height=4.5, fig.width=7}
+ggplot(data = all_data) +
+  aes(x = Lat, y = Long, colour = occurrence_cat) +
+  geom_point() +
+  labs(x= "Latitude", y="Longitude", colour = "Case Occurred in...",
+  title = "Lat-Long Map Illustrating Cases in Different Neighbourhoods")
+```
+
+
+## **Relationship between police division and auto theft occurrences**
+```{r,echo=FALSE}
+ggplot(data = all_data) +
+aes(x = Division ) +
+geom_bar(color="black", fill="gray") + 
+labs(x= "Police Division", y="Number of auto theft occurrences")
+  
+```
+
+
+---
+
+### **When does autotheft happen most frequently?**
+- Summary table showing number of autotheft per month from 2014 to 2018
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=3}
+auto_thefts3 <- auto_thefts %>%
+  filter(!is.na(occurrencemonth))
+  
+auto_thefts2 <- auto_thefts %>%
+  select(occurrencemonth) %>%
+  group_by(occurrencemonth)%>%
+  summarise(number_autotheft = sum(occurrencemonth == occurrencemonth))%>%
+  filter(!is.na(number_autotheft))%>%
+  arrange(desc(number_autotheft))
+auto_thefts2
+
+```
+
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=5}
+ggplot(data = auto_thefts3,
+       aes(x = occurrencemonth)) +
+  geom_bar() + coord_flip() + labs(title = "Number of auto thefts per month from 2014 to 2018", y = "number of auto thefts") + theme(text=element_text(size=15)) 
+```
+
+
+## Statistical Methods
+
+- Ran a hypothesis test to determine if there is a significant difference between the number of occurrences of each month over all five years
+
+- Created a linear regression between pop density per square km.           
+  Produced the $R^2$ value that provides information on how well our model captured the variability in the data
+
+
+## Hypothesis Testing
+
+- Null hypothesis($H_0$):$P_m$ = 1/12
+- Alternative hypothesis($H_A$):$P_m$ $\neq$ 1/12                           where $P_m$ is the proportion of crime occurence in each month
+  
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=3}
+n_observations <- 18175 # number of obeservations
+repetitions <- 5000 # 1000 simulations
+simulated_stats <- rep(NA, repetitions) # 1000 missing values
+set.seed(13)
+for (i in 1:repetitions){
+new_sim <- sample(c("1month", "othermonth"),
+                    size = n_observations,
+                    prob = c(1/12,11/12),
+                    replace = TRUE)
+  sim_p <- sum(new_sim == "1month") / n_observations
+  simulated_stats[i] <- sim_p; # add new value to vector of results
+}
+
+sim <- data_frame(p_1month = simulated_stats)
+
+sim %>% ggplot(aes(x = p_1month)) +
+  geom_histogram(colour = "black", fill = "grey") +
+  xlab("Simulated proportions of autotheft in one month
+       if p=1/12 (samples of size n=18175)")
+```
+
+## p-value of 12 months ranked according to amount of auto theft ocurrence form highest month to lowest
+
+```{r, echo=FALSE}
+pvalue_11 <- sim %>%
+  filter(p_1month >= 0.09607 | p_1month <= 0.070596) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_11)
+
+
+pvalue_10 <- sim %>%
+  filter(p_1month >= 0.09601 | p_1month <= 0.07065) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_10)
+
+
+pvalue_8 <- sim %>%
+  filter(p_1month >= 0.09238 | p_1month <= 0.07429) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_8)
+
+
+pvalue_7 <- sim %>%
+  filter(p_1month >= 0.08941| p_1month <= 0.07726 ) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_7)
+
+
+pvalue_9 <- sim %>%
+  filter(p_1month >= 0.085997| p_1month <= 0.080669 ) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_9)
+
+
+pvalue_6 <- sim %>%
+  filter(p_1month >= 0.08440165 | p_1month <= 0.08226468) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_6)
+
+```
+---
+```{r, echo=FALSE}
+pvalue_12 <- sim %>%
+  filter(p_1month >= 0.08380553 | p_1month <= 0.08286107) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_12)
+
+
+pvalue_5 <- sim %>%
+  filter(p_1month >= 0.08595136 | p_1month <= 0.08071527) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_5)
+
+
+pvalue_3 <- sim %>%
+  filter(p_1month >= 0.0864463 | p_1month <= 0.08022) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_3)
+
+
+pvalue_4 <- sim %>%
+  filter(p_1month >= 0.0902433 | p_1month <= 0.076432) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_4)
+
+
+pvalue_1 <- sim %>%
+  filter(p_1month >= 0.0965 | p_1month <= 0.0701) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_1)
+
+
+pvalue_2 <- sim %>%
+  filter(p_1month >=0.1013| p_1month <= 0.0653) %>%
+  summarise(p_value = n() / repetitions)
+as.numeric(pvalue_2)
+
+```
+
+## Linear Regression between Population Density and Number of Auto Thefts
+
+### Estimating the Coeffcients of the Model
+```{r, echo=FALSE}
+mod_popdensity <- lm(num_occurrences ~ pop_density_per_square_km, data = all_data)
+summary(mod_popdensity)$coefficients
+```
+---
+
+### Adding the fitted line to the plot...
+```{r, echo=FALSE, fig.height= 4}
+all_data %>% ggplot(aes(x=pop_density_per_square_km, y=num_occurrences)) + geom_point() +
+  geom_smooth(method="lm", se=FALSE) + theme_minimal() +
+  labs(x= "Population density per square km", y="Total number of overall thefts",
+  title = "Relationship between population density and number of auto theft cases")
+```
+
+### How accurate is our model? ($R^2$)
+```{r, echo=FALSE}
+summary(mod_popdensity)$r.squared
+```
+
+## Results
+
+### **Is there a significant difference of auto thefts in each month?**
+```{r, echo=FALSE}
+month_conclusion
+```
+
+---
+
+```{r,echo=FALSE, warning = FALSE, fig.height= 2.5, fig.width= 4}
+num_occurrences_above_211 <- all_data %>% 
+filter(num_occurrences>=211)
+#boxplot for comparision of distribution of population density between the top 20 neighbourhoods with highest auto theft cases and all cases
+num_occurrences_above_211 %>% ggplot(aes(x=pop_density_per_square_km, y=num_occurrences)) +
+  geom_boxplot() + labs(x= "Pop-density (top 20)", y = "number of auto thefts")
+
+all_data %>% ggplot(aes(x=pop_density_per_square_km,y=num_occurrences)) +geom_boxplot() + labs(x= "Pop-density (all neighbourhood)", y = "number of auto thefts")
+```
+
+```{r,echo=FALSE, warning = FALSE, fig.height= 2.5, fig.width= 4}
+#boxplot for comparision of distribution of num of private swellings between the top 20 neighbourhoods with highest auto theft cases and all cases
+num_occurrences_above_211 %>% ggplot(aes(x=num_private_dwellings, y=num_occurrences)) +
+  geom_boxplot() + labs(x= "Private dwellings (top 20)",y = "number of auto thefts")
+
+all_data %>% ggplot(aes(x=num_private_dwellings,y=num_occurrences)) +geom_boxplot()+ labs(x= "Private dwellings (all neighbourhood)", y = "number of auto thefts")
+```
+
+## Which premise type has the most amount of auto thefts?
+```{r,echo=FALSE}
+auto_thefts %>%
+ggplot(aes(x=premisetype)) + geom_bar() + labs(y = "number of auto thefts")
+```
+
+## What about the other type of thefts?
+```{r, echo=FALSE}
+#create a variable that sums the total number of theft overall cases for each neighbourhood
+crime_rates <- crime_rates %>%
+  filter(!is.na (Theft_Over_2014)) %>%
+  filter(!is.na (Theft_Over_2015)) %>%
+  filter(!is.na (Theft_Over_2016)) %>%
+  filter(!is.na (Theft_Over_2017)) %>%
+  filter(!is.na (Theft_Over_2018)) %>%
+  mutate(total_num_other_theft = Theft_Over_2014 + Theft_Over_2015 + Theft_Over_2016 + Theft_Over_2017+ Theft_Over_2018)
+```
+
+```{r, echo=FALSE}
+#join two files
+crime_auto_file <-inner_join(x=crime_rates, y= all_data, by="Hood_ID")
+```
+
+```{r, echo=FALSE, fig.height=5, fig.width=8}
+ggplot(data = crime_auto_file,) +
+  aes(x = num_occurrences, y = total_num_other_theft, colour = occurrence_cat) +
+  geom_point() +
+  labs(x= "Total number of auto thefts", y="Total number of overall thefts", colour = "Neighbourhood Category",
+  title = "Relationship between number of auto thefts and number of overall thefts\nper neighbourhood from 2014-2018")
+```
+
+## Neighbourhoods with highest number of other thefts 
+
+```{r, echo =FALSE}
+#table comparing total number of theft overall cases and neighbourhood
+theft_over_rank <- crime_rates %>% 
+  select(total_num_other_theft, Neighbourhood, Hood_ID) %>%
+  arrange (desc(total_num_other_theft))
+
+head(theft_over_rank)
+
+```
+
+
+## Neighbourhoods with highest number of auto thefts
+
+```{r, echo =FALSE}
+#table comparing total number of auto theft and neighbourhood
+auto_theft_rank <- count_HOODID_differences %>% 
+  select(num_occurrences, Hood_ID) %>%
+  arrange (desc(num_occurrences))
+
+head(auto_theft_rank, 11)
+
+#the above two tables are used to get the two neighbourhoods with high auto thefts and high theft overalls
+```
+
+## Conclusion
+
+- We could **increase** police force for November, October and August and direct some of police forces on other crimes for July, April, February and January.
+
+- We also discovered that the premise type with the most auto theft occurrences was **outside**, the TPS could establish some concentrated parking areas in order to allow for supervision for outside parks and streets. 
+
+- We thought that more populated neighbourhoods would have a higher number of occurrences but the **opposite was revealed**, so the TPS should be aware that areas with more people do not necessarily mean that they are prone to auto thefts. 
+
+---
+
+- We found that the top 20 neighbourhoods with the highest number of auto thefts had a **higher average population density** and a **higher average number of private dwellings** compared to those of all neighbourhoods, the TPS could notify residence areas in these areas to be cautious and promote the usage of digital video recorder.
+
+- **Black creek and Willowridge-Martingrove-Richview** which were ranked in the top 20 of all neighbourhoods for highest auto theft occurrences and also had a high rate of other thefts, the TPS could focus on reinforcing and educating the areas about theft in general. 
+
+- **limitation:** Most of our answers were based off of the top 20 neighbourhoods with the highest number of auto thefts. This is a limitation as we did not account for the average number of auto thefts for all years. Therefore, all of our conclusions are not always beyond the doubt.
+
+
